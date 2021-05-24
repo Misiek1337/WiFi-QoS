@@ -211,6 +211,13 @@ int main (int argc, char *argv[])
       staClientApp.Start (Seconds (1.0));
       staClientApp.Stop (Seconds (simulationTime + 1));
     }
+
+  //phy.EnablePcap ("out2", 1, 0); // sniffing to PCAP file
+
+  //AsciiTraceHelper ascii;
+  //phy.EnableAsciiAll (ascii.CreateFileStream ("out2.tr"));
+  //phy.EnableAscii (ascii.CreateFileStream ("out2.tr"), wifiStaNode.Get (0)->GetDevice (0));
+
   FlowMonitorHelper flowmon_helper;
   Ptr<FlowMonitor> monitor = flowmon_helper.InstallAll ();
   monitor->SetAttribute ("StartTime", TimeValue (Seconds (flowStart) ) );
@@ -245,8 +252,7 @@ int main (int argc, char *argv[])
     }
 
   Simulator::Destroy ();
-
-  monitor->SerializeToXmlFile ("out.xml", true, true); // sniffing to XML file
+  monitor->SerializeToXmlFile ("out.xml", true, true);
 
   if (error)
     {
