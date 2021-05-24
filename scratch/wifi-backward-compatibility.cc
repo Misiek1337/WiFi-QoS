@@ -31,6 +31,7 @@
 #include "ns3/packet-sink-helper.h"
 #include "ns3/ipv4-global-routing-helper.h"
 #include "ns3/yans-wifi-channel.h"
+#include "ns3/flow-monitor-helper.h"
 
 // This is an example to show how to configure an IEEE 802.11 Wi-Fi
 // network where the AP and the station use different 802.11 standards.
@@ -97,11 +98,12 @@ int main (int argc, char *argv[])
 {
   uint32_t payloadSize = 1472; //bytes
   double simulationTime = 10; //seconds
+  double flowStart = 0;
   std::string apVersion = "80211a";
   std::string staVersion = "80211n_5GHZ";
   std::string apRaa = "Minstrel";
   std::string staRaa = "MinstrelHt";
-  bool apHasTraffic = false;
+  bool apHasTraffic = true;
   bool staHasTraffic = true;
 
   CommandLine cmd (__FILE__);
@@ -209,6 +211,9 @@ int main (int argc, char *argv[])
       staClientApp.Start (Seconds (1.0));
       staClientApp.Stop (Seconds (simulationTime + 1));
     }
+  FlowMonitorHelper flowmon_helper;
+  Ptr<FlowMonitor> monitor = flowmon_helper.InstallAll ();
+  monitor->SetAttribute ("StartTime", TimeValue (Seconds (flowStart) ) );
 
   Ipv4GlobalRoutingHelper::PopulateRoutingTables ();
 
@@ -240,6 +245,8 @@ int main (int argc, char *argv[])
     }
 
   Simulator::Destroy ();
+
+  monitor->SerializeToXmlFile ("out.xml", true, true); // sniffing to XML file
 
   if (error)
     {
