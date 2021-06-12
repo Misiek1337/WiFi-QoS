@@ -29,9 +29,15 @@
 #include "ns3/ipv4-address-helper.h"
 #include "ns3/udp-client-server-helper.h"
 #include "ns3/packet-sink-helper.h"
+#include "ns3/packet-sink.h"
 #include "ns3/ipv4-global-routing-helper.h"
+#include "ns3/flow-monitor-module.h"
 #include "ns3/yans-wifi-channel.h"
 #include "ns3/flow-monitor-helper.h"
+#include "ns3/on-off-helper.h"
+#include "ns3/core-module.h"
+#include <iostream>
+#include <iomanip>
 
 // This is an example to show how to configure an IEEE 802.11 Wi-Fi
 // network where the AP and the station use different 802.11 standards.
@@ -45,17 +51,14 @@
 // ./waf --run "wifi-backward-compatibility --apVersion=80211a --staVersion=80211ac --staRaa=Ideal"
 
 using namespace ns3;
+using namespace std;
 
 NS_LOG_COMPONENT_DEFINE ("wifi-backward-compatibility");
 
 WifiStandard ConvertStringToStandard (std::string version)
 {
-  WifiStandard standard = WIFI_STANDARD_80211a;
-  if (version == "80211a")
-    {
-      standard = WIFI_STANDARD_80211a;
-    }
-  else if (version == "80211b")
+  WifiStandard standard = WIFI_STANDARD_80211b;
+  if (version == "80211b")
     {
       standard = WIFI_STANDARD_80211b;
     }
@@ -63,61 +66,52 @@ WifiStandard ConvertStringToStandard (std::string version)
     {
       standard = WIFI_STANDARD_80211g;
     }
-  else if (version == "80211p")
-    {
-      standard = WIFI_STANDARD_80211p;
-    }
-  else if (version == "holland")
-    {
-      standard = WIFI_STANDARD_holland;
-    }
-  else if (version == "80211n_2_4GHZ")
+  else if (version == "80211n")
     {
       standard = WIFI_STANDARD_80211n_2_4GHZ;
     }
-  else if (version == "80211n_5GHZ")
-    {
-      standard = WIFI_STANDARD_80211n_5GHZ;
-    }
-  else if (version == "80211ac")
-    {
-      standard = WIFI_STANDARD_80211ac;
-    }
-  else if (version == "80211ax_2_4GHZ")
+  else if (version == "80211ax")
     {
       standard = WIFI_STANDARD_80211ax_2_4GHZ;
-    }
-  else if (version == "80211ax_5GHZ")
-    {
-      standard = WIFI_STANDARD_80211ax_5GHZ;
     }
   return standard;
 }
 
+bool fileExists(const std::string& filename);
+
+
 int main (int argc, char *argv[])
 {
-  uint32_t payloadSize = 1472; //bytes
   double simulationTime = 10; //seconds
   double flowStart = 0;
-  std::string apVersion = "80211a";
-  std::string staVersion = "80211n_5GHZ";
-  std::string apRaa = "Minstrel";
-  std::string staRaa = "MinstrelHt";
-  bool apHasTraffic = true;
-  bool staHasTraffic = true;
+  std::string apVersion = "80211n";
+  std::string staVersion = "80211n";
+  std::string legacyVersion = "80211b";
+  int client_nr = 1;
+  int legacyClients = 1;
+  std::string outputFileName = "default";
 
   CommandLine cmd (__FILE__);
   cmd.AddValue ("simulationTime", "Simulation time in seconds", simulationTime);
-  cmd.AddValue ("apVersion", "The standard version used by the AP: 80211a, 80211b, 80211g, 80211p, holland, 80211n_2_4GHZ, 80211n_5GHZ, 80211ac, 80211ax_2_4GHZ or 80211ax_5GHZ", apVersion);
-  cmd.AddValue ("staVersion", "The standard version used by the station: 80211a, 80211b, 80211g, 80211_10MHZ, 80211_5MHZ, holland, 80211n_2_4GHZ, 80211n_5GHZ, 80211ac, 80211ax_2_4GHZ or 80211ax_5GHZ", staVersion);
-  cmd.AddValue ("apRaa", "Rate adaptation algorithm used by the AP", apRaa);
-  cmd.AddValue ("staRaa", "Rate adaptation algorithm used by the station", staRaa);
-  cmd.AddValue ("apHasTraffic", "Enable/disable traffic on the AP", apHasTraffic);
-  cmd.AddValue ("staHasTraffic", "Enable/disable traffic on the station", staHasTraffic);
+  cmd.AddValue ("apVersion", "The standard version used by the AP: 80211b, 80211g, 80211n, 80211ax", apVersion);
+  cmd.AddValue ("staVersion", "The standard version used by the station: 80211b, 80211g, 80211n, 80211ax", staVersion);
+  cmd.AddValue ("clientNr", "Number of clients", client_nr);
+  cmd.AddValue ("legacyClients", "Number of legacy clients", legacyClients);
+  cmd.AddValue ("legacyVersion", "Legacy standard used by clients", legacyVersion);
+  cmd.AddValue ("outputFileName", "Output filename", outputFileName);
   cmd.Parse (argc,argv);
 
+
+  NodeContainer wifiLegacyNode;
+  NetDeviceContainer legacyDevice;
+
+
   NodeContainer wifiStaNode;
-  wifiStaNode.Create (1);
+  wifiStaNode.Create (client_nr);
+  if (legacyClients > 0)
+{
+  wifiLegacyNode.Create (legacyClients);
+}
   NodeContainer wifiApNode;
   wifiApNode.Create (1);
 
@@ -129,17 +123,19 @@ int main (int argc, char *argv[])
   WifiHelper wifi;
   Ssid ssid = Ssid ("ns3");
 
+InternetStackHelper stack;
+//STA config
   wifi.SetStandard (ConvertStringToStandard (staVersion));
-  wifi.SetRemoteStationManager ("ns3::" + staRaa + "WifiManager");
+  wifi.SetRemoteStationManager ("ns3::IdealWifiManager");
 
   mac.SetType ("ns3::StaWifiMac",
                "Ssid", SsidValue (ssid));
 
   NetDeviceContainer staDevice;
   staDevice = wifi.Install (phy, mac, wifiStaNode);
-
+//Node config
   wifi.SetStandard (ConvertStringToStandard (apVersion));
-  wifi.SetRemoteStationManager ("ns3::" + apRaa + "WifiManager");
+  wifi.SetRemoteStationManager ("ns3::IdealWifiManager");
 
   mac.SetType ("ns3::ApWifiMac",
                "Ssid", SsidValue (ssid));
@@ -147,30 +143,46 @@ int main (int argc, char *argv[])
   NetDeviceContainer apDevice;
   apDevice = wifi.Install (phy, mac, wifiApNode);
 
-  //Workaround needed as long as we do not fully support channel bonding
-  if (staVersion == "80211ac")
-    {
-      Config::Set ("/NodeList/0/DeviceList/*/$ns3::WifiNetDevice/Phy/ChannelWidth", UintegerValue (20));
-      Config::Set ("/NodeList/0/DeviceList/*/$ns3::WifiNetDevice/Phy/Frequency", UintegerValue (5180));
-    }
-  if (apVersion == "80211ac")
-    {
-      Config::Set ("/NodeList/1/DeviceList/*/$ns3::WifiNetDevice/Phy/ChannelWidth", UintegerValue (20));
-      Config::Set ("/NodeList/1/DeviceList/*/$ns3::WifiNetDevice/Phy/Frequency", UintegerValue (5180));
-    }
+//Legacy node config
+  if (legacyClients>0)
+{
+  wifi.SetStandard (ConvertStringToStandard (legacyVersion));
+  wifi.SetRemoteStationManager ("ns3::IdealWifiManager");
 
+  mac.SetType ("ns3::StaWifiMac",
+               "Ssid", SsidValue (ssid));
+
+
+  legacyDevice = wifi.Install (phy, mac, wifiLegacyNode);
+}
+//Location fo AP
   MobilityHelper mobility;
   Ptr<ListPositionAllocator> positionAlloc = CreateObject<ListPositionAllocator> ();
   positionAlloc->Add (Vector (0.0, 0.0, 0.0));
-  positionAlloc->Add (Vector (5.0, 0.0, 0.0));
   mobility.SetPositionAllocator (positionAlloc);
   mobility.SetMobilityModel ("ns3::ConstantPositionMobilityModel");
-  mobility.Install (wifiApNode);
-  mobility.Install (wifiStaNode);
-
-  InternetStackHelper stack;
   stack.Install (wifiApNode);
+  mobility.Install (wifiApNode);
+
+//Location of nodes
+
+  mobility.SetPositionAllocator ("ns3::RandomDiscPositionAllocator",
+                                  "X", StringValue ("0.0"),
+                                  "Y", StringValue ("0.0"),
+                                  "Rho", StringValue ("ns3::UniformRandomVariable[Min=0|Max=20]"));
+  mobility.Install (wifiStaNode);
   stack.Install (wifiStaNode);
+
+//Legacy Nodes location
+  if (legacyClients>0)
+{
+  mobility.SetPositionAllocator ("ns3::RandomDiscPositionAllocator",
+                                  "X", StringValue ("0.0"),
+                                  "Y", StringValue ("0.0"),
+                                  "Rho", StringValue ("ns3::UniformRandomVariable[Min=0|Max=20]"));
+  mobility.Install (wifiLegacyNode);
+  stack.Install (wifiLegacyNode);
+}
 
   Ipv4AddressHelper address;
   address.SetBase ("192.168.1.0", "255.255.255.0");
@@ -180,85 +192,101 @@ int main (int argc, char *argv[])
   staNodeInterface = address.Assign (staDevice);
   apNodeInterface = address.Assign (apDevice);
 
-  UdpServerHelper apServer (9);
-  ApplicationContainer apServerApp = apServer.Install (wifiApNode.Get (0));
-  apServerApp.Start (Seconds (0.0));
-  apServerApp.Stop (Seconds (simulationTime + 1));
 
-  UdpServerHelper staServer (5001);
-  ApplicationContainer staServerApp = staServer.Install (wifiStaNode.Get (0));
-  staServerApp.Start (Seconds (0.0));
-  staServerApp.Stop (Seconds (simulationTime + 1));
+  if (legacyClients>0)
+{
+  Ipv4InterfaceContainer legacyNodeInterface;
+  legacyNodeInterface = address.Assign (legacyDevice);
+}
 
-  if (apHasTraffic)
+ApplicationContainer sourceApplications, sinkApplications;
+  int portNumber = 9;
+  for (int index = 0; index < client_nr; ++index) //Loop over all stations (which transmit to the AP)
     {
-      UdpClientHelper apClient (staNodeInterface.GetAddress (0), 5001);
-      apClient.SetAttribute ("MaxPackets", UintegerValue (4294967295u));
-      apClient.SetAttribute ("Interval", TimeValue (Time ("0.00001"))); //packets/s
-      apClient.SetAttribute ("PacketSize", UintegerValue (payloadSize)); //bytes
-      ApplicationContainer apClientApp = apClient.Install (wifiApNode.Get (0));
-      apClientApp.Start (Seconds (1.0));
-      apClientApp.Stop (Seconds (simulationTime + 1));
+      auto ipv4 = wifiApNode.Get (0)->GetObject<Ipv4> (); //Get destination's IP interface
+      const auto address = ipv4->GetAddress (1, 0).GetLocal (); //Get destination's IP address
+      InetSocketAddress sinkSocket (address, portNumber++); //Configure destination socket
+      OnOffHelper onOffHelper ("ns3::UdpSocketFactory", sinkSocket); //Configure traffic generator: UDP, destination socket
+      onOffHelper.SetConstantRate (DataRate (100e6), 1000);  //Set data rate (150 Mb/s divided by no. of transmitting stations) and packet size [B]
+      sourceApplications.Add (onOffHelper.Install (wifiStaNode.Get (index))); //Install traffic generator on station
+      PacketSinkHelper packetSinkHelper ("ns3::UdpSocketFactory", sinkSocket); //Configure traffic sink
+      sinkApplications.Add (packetSinkHelper.Install (wifiApNode.Get (0))); //Install traffic sink on AP
     }
 
-  if (staHasTraffic)
+
+  if (legacyClients>0)
+{
+  for (int index = 0; index < legacyClients; ++index) //Loop over all stations (which transmit to the AP)
     {
-      UdpClientHelper staClient (apNodeInterface.GetAddress (0), 9);
-      staClient.SetAttribute ("MaxPackets", UintegerValue (4294967295u));
-      staClient.SetAttribute ("Interval", TimeValue (Time ("0.00001"))); //packets/s
-      staClient.SetAttribute ("PacketSize", UintegerValue (payloadSize)); //bytes
-      ApplicationContainer staClientApp = staClient.Install (wifiStaNode.Get (0));
-      staClientApp.Start (Seconds (1.0));
-      staClientApp.Stop (Seconds (simulationTime + 1));
+      auto ipv4 = wifiApNode.Get (0)->GetObject<Ipv4> (); //Get destination's IP interface
+      const auto address = ipv4->GetAddress (1, 0).GetLocal (); //Get destination's IP address
+      InetSocketAddress sinkSocket (address, portNumber++); //Configure destination socket
+      OnOffHelper onOffHelper ("ns3::UdpSocketFactory", sinkSocket); //Configure traffic generator: UDP, destination socket
+      onOffHelper.SetConstantRate (DataRate (100e6), 1000);  //Set data rate (150 Mb/s divided by no. of transmitting stations) and packet size [B]
+      sourceApplications.Add (onOffHelper.Install (wifiLegacyNode.Get (index))); //Install traffic generator on station
+      PacketSinkHelper packetSinkHelper ("ns3::UdpSocketFactory", sinkSocket); //Configure traffic sink
+      sinkApplications.Add (packetSinkHelper.Install (wifiApNode.Get (0))); //Install traffic sink on AP
     }
+}
 
-  //phy.EnablePcap ("out2", 1, 0); // sniffing to PCAP file
-
-  //AsciiTraceHelper ascii;
-  //phy.EnableAsciiAll (ascii.CreateFileStream ("out2.tr"));
-  //phy.EnableAscii (ascii.CreateFileStream ("out2.tr"), wifiStaNode.Get (0)->GetDevice (0));
+  sinkApplications.Start (Seconds (0.5));
+  sinkApplications.Stop (Seconds (simulationTime));
+//flow monitor
 
   FlowMonitorHelper flowmon_helper;
   Ptr<FlowMonitor> monitor = flowmon_helper.InstallAll ();
+
   monitor->SetAttribute ("StartTime", TimeValue (Seconds (flowStart) ) );
 
   Ipv4GlobalRoutingHelper::PopulateRoutingTables ();
 
+//Sim start
   Simulator::Stop (Seconds (simulationTime + 1));
   Simulator::Run ();
 
-  uint64_t rxBytes;
-  double throughput;
-  bool error = false;
-  if (apHasTraffic)
-    {
-      rxBytes = payloadSize * DynamicCast<UdpServer> (staServerApp.Get (0))->GetReceived ();
-      throughput = (rxBytes * 8) / (simulationTime * 1000000.0); //Mbit/s
-      std::cout << "AP Throughput: " << throughput << " Mbit/s" << std::endl;
-      if (throughput == 0)
-      {
-        error = true;
-      }
+//Output
+  if (true) {
+    std::ofstream myfile;
+    std::string outputCsv = outputFileName + ".csv";
+    if (fileExists(outputCsv)) {
+      // If the file exists, append to it
+      myfile.open (outputCsv, std::ios::app); 
     }
-  if (staHasTraffic)
-    {
-      rxBytes = payloadSize * DynamicCast<UdpServer> (apServerApp.Get (0))->GetReceived ();
-      throughput = (rxBytes * 8) / (simulationTime * 1000000.0); //Mbit/s
-      std::cout << "STA Throughput: " << throughput << " Mbit/s" << std::endl;
-      if (throughput == 0)
-      {
-        error = true;
-      }
+    else {
+      // If the file does not exist, create it and set the header line
+      myfile.open (outputCsv, std::ios::app);  
+      myfile << "Timestamp,client_nr,RngRun,FlowSrc,Throughput" << std::endl;
     }
+
+    //Get timestamp
+    auto t = std::time(nullptr);
+    auto tm = *std::localtime(&t);
+
+    // Calculate per-flow throughput and print results to file
+    double flowThr=0;
+    Ptr<Ipv4FlowClassifier> classifier = DynamicCast<Ipv4FlowClassifier> (flowmon_helper.GetClassifier ());
+    std::map<FlowId, FlowMonitor::FlowStats> stats = monitor->GetFlowStats ();
+    for (std::map<FlowId, FlowMonitor::FlowStats>::const_iterator i = stats.begin (); i != stats.end (); ++i) {
+      Ipv4FlowClassifier::FiveTuple t = classifier->FindFlow (i->first);
+      flowThr=i->second.rxBytes * 8.0 / (i->second.timeLastRxPacket.GetSeconds () - i->second.timeFirstTxPacket.GetSeconds ()) / 1e6;
+      myfile << std::put_time(&tm, "%Y-%m-%d %H:%M") << "," << client_nr << "," << RngSeedManager::GetRun() << "," << t.sourceAddress << "," << flowThr << std::endl;
+    }
+    myfile.close();
+  }
+
+  double throughput = 0;
+  for (uint32_t index = 0; index < sinkApplications.GetN (); ++index) //Loop over all traffic sinks
+  {
+    uint64_t totalBytesThrough = DynamicCast<PacketSink> (sinkApplications.Get (index))->GetTotalRx (); //Get amount of bytes received
+    // std::cout << "Bytes received: " << totalBytesThrough << std::endl;
+    throughput += ((totalBytesThrough * 8) / (simulationTime * 1000000.0)); //Mbit/s 
+  }
+  std::cout << "- network throughput: " << throughput << " Mbit/s" << std::endl;
 
   Simulator::Destroy ();
-  monitor->SerializeToXmlFile ("out.xml", true, true);
-
-  if (error)
-    {
-      NS_LOG_ERROR ("No traffic received!");
-      exit (1);
-    }
-
-  return 0;
+}
+bool fileExists(const std::string& filename)
+{
+    std::ifstream f(filename.c_str());
+    return f.good();   
 }
